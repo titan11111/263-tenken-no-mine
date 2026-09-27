@@ -44,6 +44,18 @@ body.low .bar{animation:pulse .5s infinite alternate}
   font-size:clamp(17px,4.6vw,22px);font-weight:600;opacity:0;transition:opacity .35s,transform .35s;pointer-events:none}
 #toast.on{opacity:1;transform:translate(-50%,0)}
 
+/* 勇者の独り言：頭の上に浮くもくもく吹き出し */
+#bubble{position:fixed;left:0;top:0;width:min(62vw,300px);pointer-events:none;z-index:4;opacity:0;
+  transform:translate(-50%,-100%);transform-origin:50% 100%;transition:opacity .2s}
+#bubble.on{opacity:1;animation:puff .26s cubic-bezier(.2,1.5,.4,1)}
+@keyframes puff{from{transform:translate(-50%,-100%) scale(.7)}to{transform:translate(-50%,-100%) scale(1)}}
+#bubbleT{margin:0;padding:24px 30px 26px;color:#14160c;font-size:clamp(13px,3.5vw,16px);font-weight:800;
+  line-height:1.6;text-align:center;letter-spacing:.01em;
+  background:center/100% 100% no-repeat url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20300%20124'%20preserveAspectRatio='none'%3E%3Cpath%20d='M40%20100%20Q14%2098%2016%2078%20Q2%2060%2020%2048%20Q18%2026%2044%2030%20Q58%2010%2086%2020%20Q112%206%20140%2020%20Q168%208%20190%2022%20Q220%2010%20238%2028%20Q268%2026%20272%2048%20Q292%2060%20278%2078%20Q288%2096%20260%20100%20Q242%20114%20212%20106%20Q184%20118%20156%20108%20Q126%20118%2098%20108%20Q62%20114%2040%20100%20Z'%20fill='%23f4f1ea'%20stroke='%2314160c'%20stroke-width='5'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+  filter:drop-shadow(4px 5px 0 rgba(12,13,16,.45))}
+#bubble i{position:absolute;display:block;background:#f4f1ea;border:3px solid #14160c;border-radius:50%}
+#bubble .p1{width:17px;height:17px;bottom:-13px;left:44%}
+#bubble .p2{width:10px;height:10px;bottom:-30px;left:39%}
 #pull{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 170px);transform:translateX(-50%);
   width:min(70vw,320px);text-align:center;display:none}
 #pull.on{display:block}
@@ -91,10 +103,19 @@ body.playing #joyZone,body.playing #joy,body.playing #act{display:block}
   .screen{flex-direction:column;align-items:stretch;justify-content:flex-end}
   .vtitle{position:absolute;top:calc(env(safe-area-inset-top,0px) + 26px);right:calc(env(safe-area-inset-right,0px) + 22px)}
 }
-@media (prefers-reduced-motion:reduce){ .screen,#toast,#flash{transition:none} body.low .bar{animation:none} }
+@media (prefers-reduced-motion:reduce){ .screen,#toast,#flash,#bubble{transition:none} body.low .bar,#bubble.on{animation:none} }
 </style>
 </head>
 <body>
+<section class="screen" id="title">
+  <h1 class="vtitle">天剣の峰</h1>
+  <div class="story shadow">
+    <p class="seal">立入禁止</p>
+    <p class="lead">百年、抜けない。</p>
+    <button class="cta" id="start">登る</button>
+    <p class="best" id="best"></p>
+  </div>
+</section>
 <canvas id="c" aria-label="断崖を登る3Dゲーム画面"></canvas>
 
 <div class="hud shadow" id="hud">
@@ -108,23 +129,14 @@ body.playing #joyZone,body.playing #joy,body.playing #act{display:block}
 </div>
 
 <div id="toast" class="mincho shadow" role="status" aria-live="polite"></div>
+<div id="bubble" aria-hidden="true"><p id="bubbleT" class="mincho"></p><i class="p1"></i><i class="p2"></i></div>
 
-<div id="pull" class="shadow"><div class="mincho">剣が、わずかに動く</div><div class="bar"><i id="pullFill" style="transform:scaleX(0)"></i></div></div>
+<div id="pull" class="shadow"><div class="mincho">伝説の剣を引き抜く</div><div class="bar"><i id="pullFill" style="transform:scaleX(0)"></i></div></div>
 
 <div id="joyZone"></div>
 <div id="joy"><div id="knob"></div></div>
 <button id="act" class="mincho" aria-label="跳ぶ">跳ぶ</button>
 <div class="keys shadow">移動 WASD / 矢印　岩クリックで手を伸ばす　足場で腕を休める　跳ぶ・抜く スペース</div>
-
-<section class="screen" id="title">
-  <h1 class="vtitle">天剣の峰</h1>
-  <div class="story shadow">
-    <p class="seal">立入禁止</p>
-    <p class="lead">百年、抜けない。</p>
-    <button class="cta" id="start">登る</button>
-    <p class="best" id="best"></p>
-  </div>
-</section>
 
 <section class="screen hide" id="end" aria-hidden="true">
   <h2 class="vtitle">抜けた</h2>
@@ -161,7 +173,15 @@ function tnoise(x,y,p){const m=v=>((v%p)+p)%p;const xi=Math.floor(x),yi=Math.flo
   const a=hash(m(xi),m(yi)),b=hash(m(xi+1),m(yi)),c=hash(m(xi),m(yi+1)),d=hash(m(xi+1),m(yi+1));return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v;}
 
 /* ---------- world ---------- */
-const Y_TOP=130, GRIP_R=1.35, FEET=1.08, SW_D=14;
+// 勇者は1.5倍（root.scale 1.8→2.7）。体格から決まる値はすべて HERO_S から導き、手打ち数値を残さない。
+const HERO_S=2.7;
+const FEET=0.60*HERO_S;                       // 足裏〜腰原点
+const ARM_X=0.30*HERO_S, ARM_Y=0.90*HERO_S;   // 肩の位置
+const ARM_SPAN=0.70*HERO_S;                   // 肩〜手首
+const HIP_X=0.12*HERO_S, HIP_Y=0.28*HERO_S;   // 股関節の位置
+const LEG_SPAN=0.84*HERO_S;                   // 股関節〜足首
+const HEAD_Y=1.18*HERO_S;                     // 首の付け根
+const Y_TOP=130, GRIP_R=ARM_SPAN*1.06, SW_D=14;
 function wallZ(x,y){
   let z=(fbm(x*0.06+10,y*0.05)-0.5)*7;
   z+=(fbm(x*0.25,y*0.22+5,3)-0.5)*1.6;
@@ -171,7 +191,7 @@ function wallZ(x,y){
 }
 function wallClearance(x,y){
   let front=-Infinity;
-  for(const dx of [-0.65,0,0.65])for(const dy of [-0.85,0.55,2.15])
+  for(const dx of [-0.36*HERO_S,0,0.36*HERO_S])for(const dy of [-0.47*HERO_S,0.31*HERO_S,1.19*HERO_S])
     front=Math.max(front,wallZ(x+dx,Math.max(0,y+dy)));
   return front;
 }
@@ -355,7 +375,7 @@ for(let i=0;i<120;i++){
 }
 
 /* ---------- ledges ---------- */
-const LEDGES=[{x:0,y:0,w:30,ground:true},{x:1.5,y:26,w:11},{x:-3.5,y:52,w:10},{x:3,y:78,w:10},{x:-1.5,y:104,w:9}];
+const LEDGES=[{x:0,y:0,w:30,ground:true},{x:-2,y:13,w:12},{x:1.5,y:26,w:11},{x:-3.5,y:52,w:10},{x:3,y:78,w:10},{x:-1.5,y:104,w:9}];
 const ledgeMat=new THREE.MeshStandardMaterial({vertexColors:true,map:wallTex,roughness:0.95,flatShading:true});
 for(const L of LEDGES){ if(L.ground)continue;
   const g=new THREE.BoxGeometry(L.w,0.9,2.4,12,2,4);const P=g.attributes.position,C=new Float32Array(P.count*3);
@@ -389,11 +409,14 @@ function addHold(x,y,crumble,route=false,foothold=false){
   for(let k=0;k<ex;k++){const x=R(-12,12),yy=y+R(-0.7,0.7);if(Math.abs(x-hx)<1.4||nearLedge(x,yy))continue;addHold(x,yy,y>18&&rnd()<(y>80?0.35:0.22));}
   y+=y<50?R(1.6,2.2):R(1.9,2.6);
 }}
+// The last shelf has a deliberate, unbreakable route to the summit lip.
+for(const [x,y] of [[-1.5,108],[-0.8,112],[0.1,116],[-0.5,120],[0,124]])
+  if(!holds.some(h=>Math.hypot(h.x-x,h.y-y)<0.7))addHold(x,y,false,true);
 // Extra low holds give the opening ascent several places to plant a foot.
 {
-  const early=holds.filter(h=>h.route&&h.y>4.3&&h.y<26);
+  const early=holds.filter(h=>h.route&&h.y>6.5&&h.y<30);
   for(let i=0;i<early.length;i+=2){
-    const h=early[i],x=clamp(h.x+(i%4===0?-0.48:0.48),-11,11),y=h.y-3.25;
+    const h=early[i],x=clamp(h.x+(i%4===0?-0.72:0.72),-11,11),y=h.y-4.9;
     if(!holds.some(v=>Math.hypot(v.x-x,v.y-y)<0.7))addHold(x,y,false,false,true);
   }
 }
@@ -446,16 +469,17 @@ function makeHero(){
   const hand={g:new THREE.SphereGeometry(0.062,8,6),m:leather,o:0.03};
   const boot={g:new THREE.BoxGeometry(0.13,0.11,0.26),m:leather,o:0.03,z:-0.05};
   root.userData={armL:limb(-0.3,0.34,0.36,0.34,0.065,0.056,cloth,leather,hand),armR:limb(0.3,0.34,0.36,0.34,0.065,0.056,cloth,leather,hand),
-    legL:limb(-0.12,-0.28,0.42,0.42,0.088,0.072,cloth,leather,boot),legR:limb(0.12,-0.28,0.42,0.42,0.088,0.072,cloth,leather,boot),cg:capeGeo,cbase,hem};
+    legL:limb(-0.12,-0.28,0.42,0.42,0.088,0.072,cloth,leather,boot),legR:limb(0.12,-0.28,0.42,0.42,0.088,0.072,cloth,leather,boot),head,cg:capeGeo,cbase,hem};
   // Double the figure around its feet, so standing height and ledge contact stay intact.
   for(const child of root.children)child.position.y+=0.56;
   for(const key of ['armL','armR','legL','legR'])root.userData[key].target.y+=0.56;
-  root.scale.setScalar(1.8);return root;
+  root.scale.setScalar(HERO_S);return root;
 }
 const hero=makeHero();scene.add(hero);
-const down=new THREE.Vector3(0,-1,0),ikWorld=new THREE.Vector3(),ikLocal=new THREE.Vector3();
-function solveLimb(limb,target,bend,dt){
-  limb.target.lerp(target,1-Math.exp(-15*dt));
+const down=new THREE.Vector3(0,-1,0),ikLocal=new THREE.Vector3();
+function solveLimb(limb,target,bend,dt,rate=15){
+  // rate=0 は「補間なし」。掴んだ岩は1フレームも滑らせない。
+  if(rate<=0)limb.target.copy(target);else limb.target.lerp(target,1-Math.exp(-rate*dt));
   const origin=limb.a.position,delta=ikLocal.copy(limb.target).sub(origin);
   const len=clamp(delta.length(),0.05,limb.ul+limb.ll-0.006),dir=delta.normalize();
   const bendDir=new THREE.Vector3().copy(bend).addScaledVector(dir,-bend.dot(dir)).normalize();
@@ -466,45 +490,148 @@ function solveLimb(limb,target,bend,dt){
   limb.a.quaternion.setFromUnitVectors(down,elbow.normalize());
   limb.b.quaternion.setFromUnitVectors(down,forearm.normalize().applyQuaternion(limb.a.quaternion.clone().invert()));
 }
-function footHold(x,y){
-  let best=null,dist=0.68;
-  for(const h of holds){if(h.gone)continue;
-    const d=Math.hypot((h.x-x)*1.1,h.y-y);
-    if(d<dist){best=h;dist=d;}}
-  return best;
-}
-function footSupport(){
-  const left=footHold(player.x-0.2,player.y-0.92),right=footHold(player.x+0.2,player.y-0.92);
-  return Number(!!left)+Number(!!right&&right!==left);
-}
 function handDistance(h){
   const dy=(h.y-player.y-ARM_Y)*0.85;
   return Math.min(Math.hypot(h.x-player.x+ARM_X,dy),Math.hypot(h.x-player.x-ARM_X,dy));
 }
-function plantedLimbs(kind,phase,dt){
-  hero.updateMatrixWorld(true);
-  const u=hero.userData,active=kind==='climb'||kind==='reach';
-  for(const [side,sign] of [['L',-1],['R',1]]){
-    const stride=Math.sin(phase+(sign>0?Math.PI:0)),lift=Math.max(0,stride);
-    const arm=u['arm'+side],leg=u['leg'+side];
-    const hold=(player.reach&&player.reach.hand===side)?player.reach.hold:
-      (player.aimHand===side?player.aimed:(player.grip&&Math.sign(player.grip.x-player.x)===sign?player.grip:null));
-    const handX=player.x+sign*0.55+(active?0.18*stride:0);
-    const handY=player.y+1.96+(active?0.18*lift:0);
-    const handZ=wallZ(handX,handY)+0.39;
-    const ht=hold&&!hold.gone?ikWorld.copy(hold.mesh.position).add(new THREE.Vector3(0,0,0.38)):ikWorld.set(handX,handY,handZ);
-    solveLimb(arm,hero.worldToLocal(ht.clone()),new THREE.Vector3(sign*0.20,-0.65,0.70),dt);
-    const footX=player.x+sign*0.19+(active?0.12*stride:0);
-    const footY=Math.max(0,player.y-0.96+(active?0.21*lift:0));
-    let support=footHold(footX,footY);
-    if(sign>0&&support===footHold(player.x-0.2,player.y-0.92))support=null;
-    const footZ=support?support.mesh.position.z+0.25:wallZ(footX,footY)+0.38;
-    solveLimb(leg,hero.worldToLocal(ikWorld.set(support?support.x:footX,support?support.y:footY,footZ).clone()),new THREE.Vector3(sign*0.10,0,0.95),dt);
+
+/* ---------- 登りの装具（三点支持リグ） ---------- */
+// 人の登りは「離すのは一度に一本、残り三本は岩に貼りつく」。
+// だから接点を世界座標で持ち、体だけがその下を移動する。手足は滑らない。
+const rig={};
+for(const k of ['armL','armR','legL','legR'])
+  rig[k]={p:new THREE.Vector3(),a:new THREE.Vector3(),b:new THREE.Vector3(),to:new THREE.Vector3(),
+          t:1,dur:0.2,arc:0.2,hold:null,init:false};
+const bodyCur={x:0,y:0,yaw:0,roll:0};
+const LV=new THREE.Vector3();
+const limbSign=k=>k.endsWith('L')?-1:1;
+function holdPoint(h,out){return out.set(h.mesh.position.x,h.mesh.position.y,h.mesh.position.z+0.21*HERO_S);}
+function wallPoint(x,y,front,out){return out.set(x,y,wallZ(x,Math.max(0,y))+front);}
+// 静止時は肘を伸ばして骨で吊る。曲げっぱなしは握力を無駄に食う姿勢。
+function handRest(side,out){
+  const sg=side==='L'?-1:1;
+  return wallPoint(player.x+sg*(ARM_X+0.05*HERO_S),player.y+ARM_Y+ARM_SPAN*0.84,0.23*HERO_S,out);
+}
+// 足は腰より下・膝はやや曲げて残す（伸ばしきると次に押せない）。
+function footRest(side,out){
+  const sg=side==='L'?-1:1;
+  return wallPoint(player.x+sg*(HIP_X+0.11*HERO_S),Math.max(0.05,player.y+HIP_Y-LEG_SPAN*0.90),0.21*HERO_S,out);
+}
+function pickHandHold(side,ex){
+  const sg=side==='L'?-1:1,sx=player.x+sg*ARM_X,sy=player.y+ARM_Y;
+  let best=null,bd=ARM_SPAN*0.97;
+  for(const h of holds){
+    if(h.gone||h===ex)continue;
+    const dy=h.y-sy;if(dy<-ARM_SPAN*0.5)continue;          // 手は肩より深く下げない
+    const d=Math.hypot((h.x-sx)*1.15,dy);
+    if(d<bd){bd=d;best=h;}
   }
+  return best;
+}
+function pickFootHold(side,e1,e2,e3){
+  const sg=side==='L'?-1:1,hx=player.x+sg*HIP_X,hy=player.y+HIP_Y;
+  let best=null,bd=LEG_SPAN*0.95;
+  for(const h of holds){
+    if(h.gone||h===e1||h===e2||h===e3)continue;
+    const dy=hy-h.y;if(dy<LEG_SPAN*0.28||dy>LEG_SPAN*1.02)continue;   // 足は腰の下だけ
+    const d=Math.hypot((h.x-hx)*1.3,dy);
+    if(d<bd){bd=d;best=h;}
+  }
+  return best;
+}
+function limbBusy(){return rig.armL.t<1||rig.armR.t<1||rig.legL.t<1||rig.legR.t<1;}
+function stepLimb(k,dur,arc,hold){
+  const s=rig[k];s.a.copy(s.p);s.b.copy(s.to);s.t=0;s.dur=dur;s.arc=arc;s.hold=hold;
+}
+function tryStep(k,hold,reach){
+  const s=rig[k];if(s.t<1)return;
+  const arm=k[0]==='a',side=k.slice(-1),sg=limbSign(k);
+  const ax=player.x+sg*(arm?ARM_X:HIP_X),ay=player.y+(arm?ARM_Y:HIP_Y);
+  const span=arm?ARM_SPAN:LEG_SPAN;
+  const far=Math.hypot(s.p.x-ax,s.p.y-ay)>span*0.99;   // 伸びきった＝離すしかない
+  const cmd=arm&&reach&&reach.hand===side;             // プレイヤーが指示した手
+  const gap=s.p.distanceTo(s.to);
+  if(!(cmd||far||(s.hold!==hold&&gap>0.12*HERO_S)||gap>0.40*HERO_S))return;
+  if(!cmd&&!far&&limbBusy())return;                    // 三点支持：同時に二本は離さない
+  stepLimb(k,cmd?Math.max(0.13,reach.dur*0.78):(arm?0.21:0.17),(arm?0.17:0.13)*HERO_S,hold);
+}
+function updateRig(dt){
+  const u=hero.userData,reach=player.reach;
+  for(const k in rig){const s=rig[k];
+    if(s.t<1){
+      s.t=Math.min(1,s.t+dt/s.dur);
+      const e=s.t*s.t*(3-2*s.t),b=Math.sin(Math.PI*s.t)*s.arc;
+      s.p.lerpVectors(s.a,s.b,e);s.p.z+=b;s.p.y+=b*0.30;   // 手足は壁から浮かせて弧で運ぶ
+    }
+    if(s.hold&&s.hold.gone)s.hold=null;
+  }
+  // 割り当て：指示された手が最優先、残りは届く岩を拾う。手が使う岩は踏まない。
+  const rHand=reach?reach.hand:player.aimHand;
+  let rHold=reach?reach.hold:(player.aimed||player.grip);
+  if(rHold&&rHold.gone)rHold=null;
+  const want={};
+  if(rHand&&rHold)want['arm'+rHand]=rHold;
+  for(const side of ['L','R'])if(!want['arm'+side])want['arm'+side]=pickHandHold(side,rHold);
+  want.legL=pickFootHold('L',want.armL,want.armR,null);
+  want.legR=pickFootHold('R',want.armL,want.armR,want.legL);
+  for(const k of ['armL','armR','legL','legR']){
+    const s=rig[k],arm=k[0]==='a',side=k.slice(-1),h=want[k];
+    if(h)holdPoint(h,s.to);else if(arm)handRest(side,s.to);else footRest(side,s.to);
+    if(!s.init){s.p.copy(s.to);s.hold=h;s.init=true;}
+  }
+  // 動かす順：指示された手 → 遠い足 → もう片方の足 → 空いた手
+  const seq=[];
+  if(rHand)seq.push('arm'+rHand);
+  const ls=['legL','legR'];
+  if(rig.legR.p.distanceTo(rig.legR.to)>rig.legL.p.distanceTo(rig.legL.to))ls.reverse();
+  seq.push(ls[0],ls[1]);
+  for(const side of ['L','R'])if(seq.indexOf('arm'+side)<0)seq.push('arm'+side);
+  for(const k of seq)tryStep(k,want[k],reach);
+  hero.updateMatrixWorld(true);
+  for(const k of ['armL','armR','legL','legR']){
+    const s=rig[k],arm=k[0]==='a',sg=limbSign(k);
+    // 肘は下・外へ、膝は外へ開く（カエル足）。壁に胸を寄せる向き。
+    const bend=arm?new THREE.Vector3(sg*0.22,-0.72,0.64):new THREE.Vector3(sg*0.66,-0.04,0.75);
+    solveLimb(u[k],hero.worldToLocal(LV.copy(s.p)),bend,dt,0);
+  }
+}
+// 体幹：体重を片足に乗せ、腰を支持足の上へ寄せ、反対の腰を壁へ入れる（ヒップイン）。
+function bodyDetail(kind,dt){
+  const reach=player.reach;
+  let wS=null;
+  if(reach)wS=reach.hand==='L'?'R':'L';                 // 手足は対角で使う
+  else if(rig.legL.t<1)wS='R';else if(rig.legR.t<1)wS='L';
+  else if(rig.legL.hold&&!rig.legR.hold)wS='L';else if(rig.legR.hold&&!rig.legL.hold)wS='R';
+  let tx=0,ty=0,yaw=0,roll=0;
+  if(wS&&(kind==='climb'||kind==='reach')){
+    const f=rig['leg'+wS];
+    tx=clamp((f.p.x-player.x)*0.5,-0.3*HERO_S,0.3*HERO_S);
+    yaw=(wS==='L'?1:-1)*0.19;roll=(wS==='L'?-1:1)*0.06;
+  }
+  if(reach){
+    // 腕で引くのではなく脚で押し上げる：一度沈んでから伸び上がる
+    const q=Math.min(1,reach.t/reach.dur);
+    ty+=HERO_S*(q<0.4?-0.085*Math.sin(q/0.4*Math.PI):0.045*Math.sin((q-0.4)/0.6*Math.PI));
+  }else ty+=0.014*HERO_S*Math.sin(state.t*2.0);         // 呼吸
+  const k=1-Math.exp(-10*dt);
+  bodyCur.x=lerp(bodyCur.x,tx,k);bodyCur.y=lerp(bodyCur.y,ty,k);
+  bodyCur.yaw=lerp(bodyCur.yaw,yaw,k);bodyCur.roll=lerp(bodyCur.roll,roll,k);
+  hero.position.x+=bodyCur.x;hero.position.y+=bodyCur.y;
+  hero.rotation.y=bodyCur.yaw;hero.rotation.z=bodyCur.roll;
+}
+// 視線：次に掴む岩を見てから、置く足元へ落とす。
+function headLook(dt){
+  const u=hero.userData;if(!u.head)return;
+  let tx=player.x,ty=player.y+ARM_Y+ARM_SPAN;
+  const look=player.reach?player.reach.hold:(player.aimed&&!player.aimed.gone?player.aimed:null);
+  if(look){tx=look.x;ty=look.y;}
+  else if(rig.legL.t<1||rig.legR.t<1){const f=rig.legL.t<1?rig.legL:rig.legR;tx=f.b.x;ty=f.b.y;}
+  const k=1-Math.exp(-8*dt),hy=player.y+HEAD_Y;
+  u.head.rotation.x=lerp(u.head.rotation.x,clamp((ty-hy)*0.30,-0.55,0.62),k);
+  u.head.rotation.y=lerp(u.head.rotation.y,clamp(-(tx-player.x)*0.22,-0.5,0.5),k);
 }
 const P0={aL:0,aLb:0,aLz:-0.22,aR:0,aRb:0,aRz:0.22,lL:0,lLb:0,lR:0,lRb:0,lean:0};
 const cur={...P0};
-const ARM_X=0.54, ARM_Y=1.62;
 function aimArm(T, side, hold){
   const sx=player.x+(side==='L'?-ARM_X:ARM_X), sy=player.y+ARM_Y;
   const dx=hold.x-sx, dy=hold.y-sy;
@@ -521,19 +648,34 @@ function pose(kind,p,dt,g=0){
     T.lL=0.35+0.5*Math.max(0,-s);T.lR=0.35+0.5*Math.max(0,s);T.lLb=-0.4-0.9*Math.max(0,-s);T.lRb=-0.4-0.9*Math.max(0,s);T.lean=-0.1;
   }
   else if(kind==='stand'){T.aL=T.aR=0.1;T.aLb=T.aRb=0.2;T.lean=0.03*Math.sin(t*1.5);}
+  else if(kind==='rest'){
+    // 岩棚では片手を壁に預け、もう片腕を下げて振る（シェイクアウト）。交互に入れ替える。
+    const sh=((t/2.6)%2)<1?'L':'R',sw=Math.sin(t*9)*0.12;
+    T.aL=sh==='L'?0.06+sw:2.34;T.aR=sh==='R'?0.06-sw:2.34;
+    T.aLb=sh==='L'?-0.10:-0.52;T.aRb=sh==='R'?-0.10:-0.52;
+    T.aLz=-0.22-(sh==='L'?0.14:0);T.aRz=0.22+(sh==='R'?0.14:0);
+    T.lean=0.02*Math.sin(t*1.6);
+  }
+  else if(kind==='mantle'){const q=clamp(g,0,1);T.aL=T.aR=2.8*(1-smooth(0.45,1,q))+0.2*smooth(0.45,1,q);T.aLb=T.aRb=-0.5*(1-q);T.lL=0.65*Math.sin(q*Math.PI);T.lR=0.5*Math.sin(q*Math.PI);T.lLb=T.lRb=-0.75*(1-q);T.lean=-0.35*(1-q);}
   else if(kind==='walk'){const s=Math.sin(p);T.aL=0.5*s;T.aR=-0.5*s;T.aLb=T.aRb=0.3;T.lL=0.55*s;T.lR=-0.55*s;T.lLb=-0.8*Math.max(0,-s);T.lRb=-0.8*Math.max(0,s);}
   else if(kind==='fall'){T.aL=2.5+0.5*Math.sin(t*14);T.aR=2.5+0.5*Math.sin(t*14+2);T.lL=0.4*Math.sin(t*11);T.lR=-0.4*Math.sin(t*11);T.lLb=T.lRb=-0.5;T.lean=0.4;}
   else if(kind==='pull'){T.aL=T.aR=1.85;T.aLb=T.aRb=-0.1;T.lL=0.45;T.lLb=-0.55;T.lR=-0.2;T.lRb=-0.2;T.lean=0.12+g*0.25+Math.sin(t*40)*0.01*g;}
   else if(kind==='victory'){T.aL=T.aR=3.02;T.lL=0.1;T.lR=-0.1;}
   const aimH=player.reach?player.reach.hold:(player.grip||player.aimed);
   const aimSide=player.reach?player.reach.hand:player.aimHand;
-  if(aimH&&!aimH.gone&&aimSide&&kind!=='fall'&&kind!=='pull'&&kind!=='victory')aimArm(T,aimSide,aimH);
+  if(aimH&&!aimH.gone&&aimSide&&kind==='walk')aimArm(T,aimSide,aimH);   // 登りは下のIKが本番
   const k=1-Math.exp(-12*dt);for(const key in T)cur[key]=lerp(cur[key],T[key],k);
   const u=hero.userData;
   u.armL.a.rotation.set(cur.aL,0,cur.aLz);u.armL.b.rotation.x=cur.aLb;u.armR.a.rotation.set(cur.aR,0,cur.aRz);u.armR.b.rotation.x=cur.aRb;
   u.legL.a.rotation.set(cur.lL,0,-0.08);u.legL.b.rotation.x=cur.lLb;u.legR.a.rotation.set(cur.lR,0,0.08);u.legR.b.rotation.x=cur.lRb;
   hero.rotation.x=cur.lean;
-  if(kind==='climb'||kind==='reach'||(kind==='stand'&&state.mode==='climb'))plantedLimbs(kind,p,dt);
+  if(state.mode==='climb'){
+    bodyDetail(kind,dt);headLook(dt);
+    if(kind==='climb'||kind==='reach')updateRig(dt);
+  }else{
+    const r=1-Math.exp(-6*dt);hero.rotation.z=lerp(hero.rotation.z,0,r);
+    if(u.head){u.head.rotation.x=lerp(u.head.rotation.x,0,r);u.head.rotation.y=lerp(u.head.rotation.y,0,r);}
+  }
   const A=u.cg.attributes.position.array,B=u.cbase,wind=gust.active?gust.dir*0.15:0;
   for(let i=0;i<A.length;i+=3){const d=clamp((0.4-B[i+1])/1.27,0,1);
     A[i]=B[i]+wind*d*d+Math.sin(t*2.1+B[i]*11)*0.012*d;
@@ -544,7 +686,7 @@ function pose(kind,p,dt,g=0){
 /* ---------- sword & altar ---------- */
 const swX=0,swGround=plateauY(0,SW_D),swZ=wallZ(0,Y_TOP)-SW_D;
 const altar=new THREE.Mesh(jitterGeo(new THREE.DodecahedronGeometry(1,1),0.25),new THREE.MeshStandardMaterial({color:sc(0x6f6960),map:rockTex,roughness:0.95,flatShading:true}));
-altar.scale.set(1.1,0.62,0.9);altar.position.set(swX,swGround+0.3,swZ);altar.castShadow=altar.receiveShadow=true;scene.add(altar);
+altar.scale.set(1.45,0.8,1.2);altar.position.set(swX,swGround+0.35,swZ);altar.castShadow=altar.receiveShadow=true;scene.add(altar);
 const sword=new THREE.Group();
 {
   const blade=new THREE.MeshStandardMaterial({color:sc(0xe3e9f0),metalness:1,roughness:0.16,emissive:new THREE.Color(0x183450),emissiveIntensity:0.7});
@@ -556,15 +698,16 @@ const sword=new THREE.Group();
   add(new THREE.CylinderGeometry(0.035,0.035,0.26,10),new THREE.MeshStandardMaterial({color:sc(0x2b1d14),roughness:0.8}),0.16);
   add(new THREE.SphereGeometry(0.062,14,10),new THREE.MeshStandardMaterial({color:sc(0x9fd8ff),emissive:new THREE.Color(0x6fc4ff),emissiveIntensity:2.2,roughness:0.1}),0.33);
 }
-const swordBaseY=swGround+1.35;sword.position.set(swX,swordBaseY,swZ);scene.add(sword);
+sword.scale.setScalar(1.4);
+const swordBaseY=swGround+1.9;sword.position.set(swX,swordBaseY,swZ);scene.add(sword);
 const swordLight=new THREE.PointLight(0x9fd8ff,2.2,16,2);swordLight.position.set(swX,swordBaseY+0.4,swZ);scene.add(swordLight);
 const glow=new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex,color:0xaee0ff,blending:THREE.AdditiveBlending,depthWrite:false,transparent:true}));
-glow.scale.setScalar(2.6);glow.position.set(swX,swordBaseY+0.3,swZ);scene.add(glow);
+glow.scale.setScalar(3.2);glow.position.set(swX,swordBaseY+0.3,swZ);scene.add(glow);
 const beamMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,
   uniforms:{uI:{value:0.55},uT:{value:0}},
   vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
   fragmentShader:`uniform float uI;uniform float uT;varying vec2 vUv;void main(){float a=pow(1.-vUv.y,2.2)*uI*(0.8+0.2*sin(vUv.y*80.-uT*3.));gl_FragColor=vec4(vec3(0.62,0.85,1.0)*a,a);}`});
-const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,320,20,1,true),beamMat);beam.position.set(swX,swordBaseY+160,swZ);scene.add(beam);
+const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,320,20,1,true),beamMat);beam.position.set(swX,swordBaseY+160,swZ);scene.add(beam);
 
 /* ---------- effects ---------- */
 const NP=1400,snowPos=new Float32Array(NP*3);for(let i=0;i<NP;i++){snowPos[i*3]=R(-15,15);snowPos[i*3+1]=R(-10,12);snowPos[i*3+2]=R(-2,14);}
@@ -584,7 +727,7 @@ const rockMat=new THREE.MeshStandardMaterial({color:sc(0x6b645c),map:rockTex,rou
 const ringGeo=new THREE.RingGeometry(0.55,0.75,28);
 const rocks=[],debris=[];
 
-const player={x:0,y:FEET,stamina:100,grip:null,ledge:LEDGES[0],cp:LEDGES[0],lunge:0,ldx:0,ldy:1,phase:0,fallV:0,zOff:0.85,land:null,reach:null,aimed:null,aimHand:null,support:0,lowWarned:false};
+const player={x:0,y:FEET,stamina:100,grip:null,ledge:LEDGES[0],cp:LEDGES[0],lunge:0,ldx:0,ldy:1,phase:0,fallV:0,zOff:0.47*HERO_S,land:null,reach:null,aimed:null,aimHand:null,support:0,lowWarned:false};
 let rockTimer=4;
 
 /* ---------- audio ---------- */
@@ -608,6 +751,52 @@ function sfx(type){if(!AC)return;const t=AC.currentTime;try{
 
 /* ---------- UI helpers ---------- */
 function toast(s,dur=2.2){const el=$('toast');el.textContent=s;el.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(()=>el.classList.remove('on'),dur*1000);}
+
+/* ---------- 勇者の独り言（やや皮肉屋で、おっちょこちょい） ---------- */
+const bubbleEl=$('bubble'),bubbleT=$('bubbleT');
+let sayT=0;
+function say(text,dur=2.8){
+  if(!text)return;
+  bubbleT.textContent=text;
+  if(!bubbleEl.classList.contains('on'))bubbleEl.classList.add('on');
+  sayT=dur;talkTimer=Math.max(talkTimer,dur+R(5,9));
+}
+const LINES={
+  climb:['百年抜けない剣を、なんで俺が','腕が……いや、まだいける。たぶん','下は見るな。……見た',
+         'この岩、さっき崩れたやつの兄弟だろ','誰か梯子を発明してくれ','今のは滑ったんじゃない。予定だ',
+         '高い。想像の三倍は高い','立入禁止って書いてあったな。うん','英雄って、こんなに地味なのか',
+         '爪が減る。剣より先に俺が折れる'],
+  far:['……届かない。腕が伸びる薬はないのか','無理だ。目測を誤った。いつもの癖だ','惜しい。惜しいは届かないと同じだ'],
+  crumble:['えっ。崩れる岩を選ぶとか、俺は','おい、そこは掴む場所だろう！','手のほうが正しい。岩が悪い'],
+  rock:['痛い！ 山に嫌われてる','上から岩。反則だろ','誰か上から石を落としてんじゃないか。','当たった。当たる気はしなかった'],
+  gust:['風まで敵か。人気者だな','飛ぶ。俺は鳥じゃない'],
+  low:['指の感覚が……あ、これ落ちるやつだ','握力、貸してくれる人はいないか'],
+  ledge:['生きてる。少し座らせてくれ','足がある。足って偉大だ','休む。これも戦略だ'],
+  land:['いてっ！ 今の岩、固すぎる','あいたた……足場が逃げたぞ','うわっ、マントだけ先に着いた',
+        '痛い。剣までまだ遠いのに','くっ……次こそ落ちない','受け身は得意になった。登りは別だ'],
+  slip:['指が岩を離れた。俺の意思じゃない','あ。','言い訳を考える時間はあるな','落ちる。二度目は数えない'],
+  bump:['落石に弾かれた。理不尽だ','岩が俺を殴った'],
+};
+const lineIdx={};
+function voice(key,dur=2.8){
+  const a=LINES[key];if(!a)return;
+  let i=Math.floor(Math.random()*a.length);
+  if(a.length>1&&i===lineIdx[key])i=(i+1)%a.length;
+  lineIdx[key]=i;say(a[i],dur);
+}
+let talkTimer=6;
+function updateBubble(dt){
+  if(sayT<=0)return;
+  sayT-=dt;
+  if(sayT<=0){bubbleEl.classList.remove('on');return;}
+  // 頭の上に置く。画面外へは出さず、端で寄せる。
+  proj.set(hero.position.x,hero.position.y+HEAD_Y+0.45*HERO_S,hero.position.z+0.5).project(camera);
+  if(proj.z>1){bubbleEl.style.opacity='0';return;}
+  bubbleEl.style.opacity='';
+  const w=innerWidth,h=innerHeight,bw=bubbleEl.offsetWidth,bh=bubbleEl.offsetHeight;
+  bubbleEl.style.left=clamp((proj.x*0.5+0.5)*w,bw*0.5+10,w-bw*0.5-10)+'px';
+  bubbleEl.style.top=clamp((-proj.y*0.5+0.5)*h-14,bh+24,h-90)+'px';
+}
 const fmt=s=>{s=Math.floor(s);return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');};
 function getBest(){try{const v=localStorage.getItem('tenken-best');return v?parseFloat(v):null;}catch(e){return null;}}
 function setBest(v){try{localStorage.setItem('tenken-best',String(v));}catch(e){}}
@@ -632,22 +821,22 @@ const joyEnd=e=>{if(e.pointerId!==joy.id)return;joy.id=null;joy.x=joy.y=0;knob.s
 zone.addEventListener('pointerup',joyEnd);zone.addEventListener('pointercancel',joyEnd);
 $('act').addEventListener('pointerdown',e=>{e.preventDefault();action();});
 
-const REACH=3.2;
+const REACH=ARM_SPAN*2.5;   // 一手で運べる体の距離
 function nearerHand(hold){
   const hy=player.y+ARM_Y, lx=player.x-ARM_X, rx=player.x+ARM_X;
   return Math.hypot(hold.x-lx,hold.y-hy)<=Math.hypot(hold.x-rx,hold.y-hy)?'L':'R';
 }
 function reachHold(hold){
   if(state.mode!=='climb'||!hold||hold.gone)return;
-  if(player.stamina<6)return;
+  if(player.stamina<5)return;
   const hand=nearerHand(hold);
   const off=hand==='L'?-ARM_X:ARM_X;
   const x1=clamp(hold.x-off,-12.5,12.5);
-  const y1=Math.max(FEET,hold.y-2.4);
+  const y1=Math.max(FEET,hold.y-(ARM_Y+ARM_SPAN*0.70));   // 掴み終わりは肘がほぼ伸びた高さ
   const dist=Math.hypot(x1-player.x,y1-player.y);
-  if(dist>REACH){toast('届かない',0.9);return;}
+  if(dist>REACH){voice('far',1.8);return;}
   if(dist<0.08&&player.grip===hold&&player.aimHand===hand)return;
-  const reachCost=5+dist*4.5;
+  const reachCost=2.6+dist*2.0;
   if(player.stamina<reachCost){toast('握力が足りない。足場か岩棚を探せ',1.6);return;}
   player.stamina-=reachCost;
   player.reach={hold,hand,t:0,dur:0.2+dist*0.07,x0:player.x,y0:player.y,x1,y1};
@@ -692,10 +881,10 @@ document.addEventListener('touchend',e=>{const n=Date.now();if(n-lastTouchEnd<=3
 
 function action(){
   if(player.reach)return;
-  if(state.mode==='climb'&&player.lunge<=0&&player.stamina>=15){
+  if(state.mode==='climb'&&player.lunge<=0&&player.stamina>=11){
     const j=input();let dx=j.x,dy=j.y;if(Math.hypot(dx,dy)<0.2){dx=0;dy=1;}const m=Math.hypot(dx,dy);
-    player.ldx=dx/m;player.ldy=dy/m;player.lunge=0.3;player.stamina-=15;sfx('jump');
-  }else if(state.mode==='pull'){state.gauge=Math.min(100,state.gauge+8.5);state.shake=Math.max(state.shake,0.06);sfx('tick');}
+    player.ldx=dx/m;player.ldy=dy/m;player.lunge=0.3;player.stamina-=11;sfx('jump');
+  }
 }
 function tapBtn(el, fn){
   let lock = 0;
@@ -710,17 +899,35 @@ function tapBtn(el, fn){
   el.addEventListener('keydown', e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); go(); } });
 }
 tapBtn($('start'), () => { initAudio(); $('title').classList.add('hide'); $('hud').classList.add('on'); document.body.classList.add('playing');
-  state.mode = 'climb'; toast('掴め。', 1.6); });
+  state.mode = 'climb'; toast('岩をタップして手を伸ばす', 2.4); say('百年抜けない剣を、なんで俺が', 3.2); });
 tapBtn($('again'), () => location.reload());
 
 /* ---------- gameplay ---------- */
 function ledgeAt(x,y,lo,hi){for(const l of LEDGES){if(Math.abs(x-l.x)<l.w/2-0.3&&y>=l.y+lo&&y<=l.y+hi)return l;}return null;}
-function startFall(msg){player.reach=null;state.mode='falling';player.fallV=0;state.falls++;$('fallv').textContent='落下 '+state.falls;toast(msg,2);
+function standingLedge(){return ledgeAt(player.x,player.y,FEET-0.03,FEET+0.35);}
+function settleOnLedge(l){player.y=l.y+FEET;player.ledge=l;player.grip=null;player.support=2;}
+function collideWithLedges(oldX,oldY){
+  const head=HEAD_Y+0.48*HERO_S,eps=0.02;
+  for(const l of LEDGES){if(l.ground)continue;
+    const edge=l.w/2-0.3,inside=Math.abs(player.x-l.x)<edge;
+    if(!inside)continue;
+    const bottom=l.y-0.9,feet=player.y-FEET;
+    // The ledge is solid from below and at its sides, not just at its top.
+    if(oldY+head<=bottom+eps&&player.y+head>bottom){
+      player.y=bottom-head;player.reach=null;player.lunge=0;return;
+    }
+    if(Math.abs(oldX-l.x)>=edge&&feet<l.y-eps&&player.y+head>bottom){
+      player.x=l.x+Math.sign(oldX-l.x)*edge;player.reach=null;player.lunge=0;return;
+    }
+    if(oldY-FEET>=l.y-eps&&feet<l.y)player.y=l.y+FEET;
+  }
+}
+function startFall(key){player.reach=null;player.ledge=null;player.support=0;state.mode='falling';player.fallV=0;state.falls++;$('fallv').textContent='落下 '+state.falls;voice(key,2.2);
   let best=player.cp;for(const l of LEDGES){if(l.y+FEET<=player.y&&l.y>best.y&&Math.abs(player.x-l.x)<l.w/2-0.3)best=l;}player.land=best;}
-const fallQuips=['いてっ！　今の岩、固すぎる','あいたた……足場が逃げたぞ','うわっ、マントだけ先に着いた','痛い！　剣までまだ遠いのに','くっ……次こそ落ちない'];
+const fallQuips=LINES.land;
 let lastQuip=-1;
-function nextFallQuip(){let i=Math.floor(R(0,fallQuips.length-(lastQuip<0?0:1)));if(lastQuip>=0&&i>=lastQuip)i++;lastQuip=i;return fallQuips[i];}
-function crumbleHold(h){h.gone=true;debris.push({m:h.mesh,vy:0,vx:R(-1,1)});toast('岩が崩れた！',1.4);sfx('crumble');}
+function nextFallQuip(){let i=Math.floor(Math.random()*(fallQuips.length-(lastQuip<0?0:1)));if(lastQuip>=0&&i>=lastQuip)i++;lastQuip=i;return fallQuips[i];}
+function crumbleHold(h){h.gone=true;debris.push({m:h.mesh,vy:0,vx:R(-1,1)});toast('岩が崩れた！',1.4);voice('crumble',2.4);sfx('crumble');}
 function spawnRock(){
   const x=clamp(player.x+R(-2.2,2.2),-12,12),y=player.y+20,r=R(0.4,0.65);
   const m=new THREE.Mesh(rockGeos[Math.floor(R(0,2.99))],rockMat);m.scale.setScalar(r);m.castShadow=true;scene.add(m);
@@ -730,7 +937,7 @@ function spawnRock(){
 function updateClimb(dt){
   const j=input();
   let reaching=false,vx=0,vy=0;
-  const py0=player.y;
+  const px0=player.x,py0=player.y;
   if(player.reach){
     const r=player.reach;
     if(r.hold.gone){player.reach=null;if(player.aimed===r.hold){player.aimed=null;player.aimHand=null;}}
@@ -745,86 +952,91 @@ function updateClimb(dt){
       player.y=Math.max(ny,FEET);
     }
   }
-  const L=ledgeAt(player.x,player.y,FEET-0.25,FEET+1.0);
-  const lip=L?null:ledgeAt(player.x,player.y,-1.5,FEET-0.25);
+  const lip=ledgeAt(player.x,player.y,-1.5,FEET-0.25);
   let H=null,hd=1e9;
   if(player.aimed&&!player.aimed.gone){
     const d=handDistance(player.aimed);
-    if(d<GRIP_R+0.45||player.reach){H=player.aimed;hd=d;}
+    if(d<GRIP_R+0.30*HERO_S||player.reach){H=player.aimed;hd=d;}
     else{player.aimed=null;player.aimHand=null;}
   }
-  if(!H&&!L&&!lip)for(const h of holds){if(h.gone)continue;const dy=h.y-player.y-ARM_Y;if(dy>1.6||dy<-1.6)continue;const d=handDistance(h);if(d<hd){hd=d;H=h;}}
+  if(!H&&!standingLedge()&&!lip)for(const h of holds){if(h.gone)continue;const dy=h.y-player.y-ARM_Y;if(dy>ARM_SPAN*1.27||dy<-ARM_SPAN*1.27)continue;const d=handDistance(h);if(d<hd){hd=d;H=h;}}
   const gripping=!!lip||(H&&hd<GRIP_R);
-  player.grip=gripping&&!lip?H:null;player.ledge=L;
+  player.grip=gripping&&!lip?H:null;
   if(!reaching){
     if(player.lunge>0){player.lunge-=dt;vx=player.ldx*8.5;vy=player.ldy*8.5;}
-    else{const sp=(L||gripping)?2.3:1.1;vx=j.x*sp;vy=j.y*sp;if(!L&&!gripping)vy-=1.7;if(lip&&j.y>0.2)vy+=0.8;}
-    if(gust.active)vx+=gust.dir*((gripping||L)?0.6:2.4);
+    else{const onLedge=!!standingLedge();const sp=(onLedge||gripping)?2.3:1.1;vx=j.x*sp;vy=j.y*sp;if(!onLedge&&!gripping)vy-=1.7;if(lip&&j.y>0.2)vy+=0.8;}
+    if(gust.active)vx+=gust.dir*((gripping||standingLedge())?0.6:2.4);
     const py=player.y;player.x=clamp(player.x+vx*dt,-12.5,12.5);let ny=py+vy*dt;
     for(const l of LEDGES){if(Math.abs(player.x-l.x)<l.w/2-0.3&&py>=l.y+FEET-0.05&&ny<l.y+FEET)ny=l.y+FEET;}
     player.y=Math.max(ny,FEET);
   }
+  collideWithLedges(px0,py0);
+  const L=standingLedge();
+  if(L)settleOnLedge(L);else player.ledge=null;
   const moving=reaching||Math.hypot(vx,vy)>0.3;player.phase+=Math.hypot(vx,vy)*dt*2.4;
-  player.support=L?2:footSupport();
+  player.support=L?2:((rig.legL.hold&&!rig.legL.hold.gone?1:0)+(rig.legR.hold&&!rig.legR.hold.gone?1:0));
   if(L&&!reaching){
-    // A ledge is a rest point only after the player releases movement.
-    player.stamina=Math.min(100,player.stamina+(moving?0:34)*dt);
-    if(player.cp!==L&&!L.ground){player.cp=L;toast('岩棚に到着。止まると握力が戻る',2.2);}
+    // Feet remain on the top face; the HUD and recovery use this same contact state.
+    player.stamina=Math.min(100,player.stamina+(moving?0:38)*dt);
+    if(player.cp!==L&&!L.ground){player.cp=L;toast('岩棚に到着。止まると握力が戻る',2.2);voice('ledge',2.6);}
   }else if(player.support>0&&!moving&&!reaching&&gripping&&!gust.active){
-    player.stamina=Math.min(100,player.stamina+(player.support===2?3.2:1.6)*dt);
+    // 両足で立てていれば、壁の途中でもしっかり戻る（足で休む＝登りの基本）
+    player.stamina=Math.min(100,player.stamina+(player.support===2?8.5:4.5)*dt);
   }else{
-    const supportRelief=player.support===2?0.48:player.support===1?0.72:1;
-    let dr=(gripping||reaching)?(moving?6.2:2.8):14;
-    dr*=supportRelief;if(player.y>90)dr*=1.3;if(gust.active)dr+=3;
+    const supportRelief=player.support===2?0.45:player.support===1?0.70:1;
+    let dr=(gripping||reaching)?(moving?4.0:1.7):11;
+    dr*=supportRelief;if(player.y>90)dr*=1.3;if(gust.active)dr+=2.5;
     player.stamina-=dr*dt;
   }
-  if(player.stamina<25&&!player.lowWarned){player.lowWarned=true;toast('握力が残り少ない。足場を使い岩棚へ',2);}
+  if(player.stamina<25&&!player.lowWarned){player.lowWarned=true;toast('握力が残り少ない。足場を使い岩棚へ',2);voice('low',2.4);}
   if(player.stamina>45)player.lowWarned=false;
   if(player.grip&&player.grip.crumble){const h=player.grip;h.t+=dt;h.mesh.position.x=h.x+Math.sin(state.t*70)*0.035;if(h.t>1.4)crumbleHold(h);}
+  if(sayT<=0){talkTimer-=dt;if(talkTimer<=0){voice('climb',3.0);talkTimer=R(11,18);}}
   if(player.y>12){rockTimer-=dt;if(rockTimer<=0){spawnRock();rockTimer=R(2.8,5.5)*(player.y>80?0.7:1);}}
-  if(player.y>40){gust.timer-=dt;if(!gust.active&&gust.timer<=0){gust.active=true;gust.t=2.2;gust.dir=rnd()<0.5?-1:1;toast(gust.dir>0?'突風 → 岩にしがみつけ':'← 突風 岩にしがみつけ',1.8);}}
+  if(player.y>40){gust.timer-=dt;if(!gust.active&&gust.timer<=0){gust.active=true;gust.t=2.2;gust.dir=rnd()<0.5?-1:1;toast(gust.dir>0?'突風 → 岩にしがみつけ':'← 突風 岩にしがみつけ',1.8);if(Math.random()<0.5)voice('gust',2.2);}}
   if(gust.active){gust.t-=dt;if(gust.t<=0){gust.active=false;gust.timer=R(6,11);}}
-  if(player.stamina<=0){player.stamina=0;startFall('指が岩を離れた……');return;}
-  if(player.y>=Y_TOP-1.1){state.mode='mantle';state.mt=0;gust.active=false;const rz=wallZ(player.x,Y_TOP);
+  if(player.stamina<=0){player.stamina=0;startFall('slip');return;}
+  if(player.y+HEAD_Y+0.48*HERO_S>=Y_TOP-1.2){state.mode='mantle';state.mt=0;player.reach=null;player.lunge=0;gust.active=false;const rz=wallZ(player.x,Y_TOP);
     state.from=new THREE.Vector3(player.x,player.y,hero.position.z);const tx=player.x*0.6;
-    state.to=new THREE.Vector3(tx,plateauY(tx,1.6)+FEET,rz-1.6);toast('頂だ',1.8);return;}
+    state.to=new THREE.Vector3(tx,plateauY(tx,2.2)+FEET,rz-2.2);toast('縁をつかんだ！ よじ登る',2.2);say('あと少し……上がれ！',2.6);return;}
   const centerZ=wallZ(player.x,player.y);
-  let safeZ=Math.max(centerZ+1.05,wallClearance(player.x,player.y)+0.95);
+  let safeZ=Math.max(centerZ+0.58*HERO_S,wallClearance(player.x,player.y)+0.53*HERO_S);
   const contact=player.reach?.hold||player.grip||player.aimed;
-  if(contact&&!contact.gone&&Math.abs(contact.x-player.x)<1&&Math.abs(contact.y-player.y-2.1)<1.3)
-    safeZ=Math.max(safeZ,contact.mesh.position.z+0.8);
-  if(lip)safeZ=Math.max(safeZ,centerZ+1.95);
+  if(contact&&!contact.gone&&Math.abs(contact.x-player.x)<1.4&&Math.abs(contact.y-player.y-ARM_Y*1.3)<ARM_Y*0.8)
+    safeZ=Math.max(safeZ,contact.mesh.position.z+0.44*HERO_S);
+  if(lip)safeZ=Math.max(safeZ,centerZ+1.08*HERO_S);
   player.zOff=lerp(player.zOff,safeZ-centerZ,1-Math.exp(-16*dt));
   player.zOff=Math.max(player.zOff,safeZ-centerZ);
   hero.position.set(player.x,player.y,centerZ+player.zOff);hero.rotation.y=0;
-  pose(reaching||player.reach?'reach':(L&&!moving?'stand':(L?'walk':'climb')),player.phase,dt);
+  pose(reaching||player.reach?'reach':(L&&!moving?'rest':(L?'walk':'climb')),player.phase,dt);
 }
 function updateFall(dt){
   player.fallV=Math.min(player.fallV+22*dt,40);player.y-=player.fallV*dt;
   const l=player.land,tx=clamp(player.x,l.x-l.w/2+0.6,l.x+l.w/2-0.6);player.x=lerp(player.x,tx,1-Math.exp(-3*dt));
-  hero.position.set(player.x,player.y,wallZ(player.x,player.y)+1.2);pose('fall',0,dt);
-  if(player.y<=l.y+FEET){player.y=l.y+FEET;player.x=tx;player.stamina=100;player.zOff=0.85;state.shake=0.5;sfx('hit');state.mode='climb';
-    toast(nextFallQuip()+(l.ground?'　ふもとから再挑戦':'　岩棚で助かった'),2.8);}
+  hero.position.set(player.x,player.y,wallZ(player.x,player.y)+0.67*HERO_S);pose('fall',0,dt);
+  if(player.y<=l.y+FEET){player.x=tx;settleOnLedge(l);player.stamina=100;player.zOff=0.47*HERO_S;state.shake=0.5;sfx('hit');state.mode='climb';
+    say(nextFallQuip(),3.0);toast(l.ground?'ふもとから再挑戦':'岩棚で助かった',2.2);}
 }
 function updateSummit(dt){
-  if(state.mode==='mantle'){state.mt+=dt/1.3;const t=Math.min(1,state.mt),f=state.from,to=state.to;
-    hero.position.set(lerp(f.x,to.x,t),lerp(f.y,to.y,smooth(0,0.6,t)),lerp(f.z,to.z,smooth(0.35,1,t)));pose('climb',state.t*6,dt);
-    if(t>=1)state.mode='walk';}
-  else if(state.mode==='walk'){const tx=swX,tz=swZ+1.25;const dx=tx-hero.position.x,dz=tz-hero.position.z,d=Math.hypot(dx,dz);
-    if(d<0.05){state.mode='pull';$('pull').classList.add('on');$('act').textContent='抜く';$('act').setAttribute('aria-label','抜く');toast('柄を握れ。連打で引き抜け',2.6);hero.rotation.y=0;}
-    else{const s=Math.min(d,1.8*dt);hero.position.x+=dx/d*s;hero.position.z+=dz/d*s;
+  if(state.mode==='mantle'){state.mt+=dt/2.6;const t=Math.min(1,state.mt),f=state.from,to=state.to;
+    hero.position.set(lerp(f.x,to.x,smooth(0.25,0.85,t)),lerp(f.y,to.y,smooth(0.14,0.94,t)),lerp(f.z,to.z,smooth(0.32,1,t)));
+    pose('mantle',0,dt,t);
+    if(t>=1){state.mode='walk';say('こんな不便なところに剣を隠したやつ誰だよ',3.4);}}
+  else if(state.mode==='walk'){const tx=swX,tz=swZ+1.7;const dx=tx-hero.position.x,dz=tz-hero.position.z,d=Math.hypot(dx,dz);
+    if(d<0.05){state.mode='pull';state.gauge=0;$('pull').classList.add('on');toast('剣をゆっくり引き抜く',2.8);say('……抜くぞ',2.5);hero.rotation.y=0;}
+    else{const s=Math.min(d,1.15*dt);hero.position.x+=dx/d*s;hero.position.z+=dz/d*s;
       const dd=wallZ(hero.position.x,Y_TOP)-hero.position.z;hero.position.y=plateauY(hero.position.x,dd)+FEET;
-      hero.rotation.y=Math.atan2(-dx,-dz);player.phase+=s*3.2;pose('walk',player.phase,dt);}}
-  else if(state.mode==='pull'){state.gauge=Math.max(0,state.gauge-16*dt);const g=state.gauge/100;
-    sword.position.y=swordBaseY+g*0.25;sword.rotation.z=Math.sin(state.t*50)*0.02*g;pose('pull',0,dt,g);
+      hero.rotation.y=Math.atan2(-dx,-dz);player.phase+=s*2.2;pose('walk',player.phase,dt);}}
+  else if(state.mode==='pull'){state.gauge=Math.min(100,state.gauge+dt*100/3.6);const g=smooth(0,1,state.gauge/100);
+    sword.position.y=swordBaseY+g*1.75;sword.rotation.z=Math.sin(state.t*7)*0.012*(1-g);pose('pull',0,dt,g);
     $('pullFill').style.transform=`scaleX(${g})`;
-    if(state.gauge>=100){state.mode='victory';state.vt=0;$('pull').classList.remove('on');sfx('victory');
+    if(state.gauge>=100){state.mode='victory';state.vt=0;$('pull').classList.remove('on');sfx('victory');say('剣を取ったら、今度は盾か……',4.0);
       const fl=$('flash');fl.style.transition='none';fl.style.opacity='0.85';requestAnimationFrame(()=>requestAnimationFrame(()=>{fl.style.transition='';fl.style.opacity='0';}));}}
   else if(state.mode==='victory'){state.vt+=dt;const t=smooth(0,1.6,state.vt);
-    const hand=new THREE.Vector3(hero.position.x+0.02,hero.position.y+1.42,hero.position.z-0.05);
-    sword.position.lerpVectors(new THREE.Vector3(swX,swordBaseY+0.25,swZ),hand,t);sword.rotation.set(Math.PI*t,0,0);
+    const hand=new THREE.Vector3(hero.position.x+0.03,hero.position.y+ARM_Y+ARM_SPAN*0.78,hero.position.z-0.08);
+    sword.position.lerpVectors(new THREE.Vector3(swX,swordBaseY+1.75,swZ),hand,t);sword.rotation.set(Math.PI*t,0,0);
     pose('victory',0,dt);beamMat.uniforms.uI.value=0.55+t*1.4;swordLight.intensity=2.2+t*5;swordLight.position.copy(sword.position);
-    glow.position.copy(sword.position);glow.scale.setScalar(2.6+t*4+Math.sin(state.t*6)*0.3);
+    glow.position.copy(sword.position);glow.scale.setScalar(3.2+t*4+Math.sin(state.t*6)*0.3);
     sparkMat.opacity=Math.min(1,state.vt);
     for(let i=0;i<NK;i++){const s=spData[i];s.a+=dt*s.s;s.y=(s.y+dt*s.s*1.4)%6;spPos[i*3]=hero.position.x+Math.cos(s.a)*s.r;spPos[i*3+1]=hero.position.y-1+s.y;spPos[i*3+2]=hero.position.z+Math.sin(s.a)*s.r;}
     spGeo.attributes.position.needsUpdate=true;
@@ -835,10 +1047,10 @@ function updateSummit(dt){
 function updateHazards(dt){
   for(let i=rocks.length-1;i>=0;i--){const r=rocks[i];r.vy=Math.max(r.vy-14*dt,-20);r.y+=r.vy*dt;
     r.m.position.set(r.x,r.y,wallZ(r.x,r.y)+0.5+r.r+(r.hit?(player.y-r.y)*0.6:0));r.m.rotation.x+=dt*6;r.m.rotation.z+=dt*3;
-    const ry=player.y+2.4;r.ring.position.set(r.x,ry,wallZ(r.x,ry)+0.6);
+    const ry=player.y+3.4;r.ring.position.set(r.x,ry,wallZ(r.x,ry)+0.6);
     r.ring.material.opacity=r.y>player.y+2?0.5+0.4*Math.sin(state.t*18):Math.max(0,r.ring.material.opacity-dt*3);
-    if(!r.hit&&state.mode==='climb'&&Math.abs(r.x-player.x)<0.95&&Math.abs(r.y-player.y)<1.0){r.hit=true;player.stamina-=28;player.y=Math.max(FEET,player.y-1.2);
-      state.shake=0.55;sfx('hit');toast('落石が直撃！',1.4);if(player.stamina<=0){player.stamina=0;startFall('落石に弾かれた……');}}
+    if(!r.hit&&state.mode==='climb'&&Math.abs(r.x-player.x)<1.3&&Math.abs(r.y-player.y)<1.5){r.hit=true;player.stamina-=22;player.y=Math.max(FEET,player.y-1.8);
+      state.shake=0.55;sfx('hit');voice('rock',2.2);if(player.stamina<=0){player.stamina=0;startFall('bump');}}
     if(r.y<player.y-25||state.mode==='walk'||state.mode==='pull'){scene.remove(r.m,r.ring);rocks.splice(i,1);}}
   for(let i=debris.length-1;i>=0;i--){const d=debris[i];d.vy-=20*dt;d.m.position.y+=d.vy*dt;d.m.position.x+=d.vx*dt;d.m.position.z+=1.5*dt;d.m.rotation.x+=dt*5;
     if(d.m.position.y<player.y-30){scene.remove(d.m);debris.splice(i,1);}}
@@ -849,11 +1061,11 @@ const camPos=new THREE.Vector3().copy(camera.position),camLook=new THREE.Vector3
 function updateCamera(dt){
   const m=state.mode,hp=hero.position;
   if(m==='title'){tmpP.set(38+Math.sin(state.t*0.1)*6,46,125);tmpL.set(0,72,0);}
-  else if(m==='climb'||m==='falling'){const wz=wallZ(player.x,player.y),dist=camera.aspect<1?13.5:10.5;
-    tmpP.set(player.x*0.75+2.2,player.y+0.6,wz+dist);tmpL.set(player.x*0.9,player.y+2.0,wz);}
-  else if(m==='mantle'||m==='walk'){tmpP.set(hp.x+1.5,hp.y+2.6,hp.z+6.2);tmpL.set(hp.x,hp.y+0.8,hp.z-5);}
-  else if(m==='pull'){tmpP.set(swX+3.4,swGround+2.8,swZ+3.4);tmpL.set(swX,swGround+1.2,swZ+0.5);}
-  else{const a=0.7+state.vt*0.3;tmpP.set(hp.x+Math.sin(a)*6,hp.y+1.6,hp.z+Math.cos(a)*6);tmpL.set(hp.x,hp.y+0.9,hp.z);}
+  else if(m==='climb'||m==='falling'){const wz=wallZ(player.x,player.y),dist=camera.aspect<1?17.5:13.6;
+    tmpP.set(player.x*0.75+2.8,player.y+0.9,wz+dist);tmpL.set(player.x*0.9,player.y+3.0,wz);}
+  else if(m==='mantle'||m==='walk'){tmpP.set(hp.x+2,hp.y+3.5,hp.z+8);tmpL.set(hp.x,hp.y+1.1,hp.z-5);}
+  else if(m==='pull'){tmpP.set(swX+4.2,swGround+3.6,swZ+4.2);tmpL.set(swX,swGround+1.6,swZ+0.5);}
+  else{const a=0.7+state.vt*0.3;tmpP.set(hp.x+Math.sin(a)*8,hp.y+2.2,hp.z+Math.cos(a)*8);tmpL.set(hp.x,hp.y+1.3,hp.z);}
   const k=1-Math.exp(-(m==='title'?1:3.5)*dt);camPos.lerp(tmpP,k);camLook.lerp(tmpL,k);
   camera.position.copy(camPos);
   if(state.shake>0){camera.position.x+=(Math.random()-0.5)*state.shake;camera.position.y+=(Math.random()-0.5)*state.shake;state.shake=Math.max(0,state.shake-dt*1.2);}
@@ -866,7 +1078,7 @@ function updateHud(){
   const a=altOf(state.mode==='climb'||state.mode==='falling'?player.y:Y_TOP+FEET);
   if(a!==lastAlt){lastAlt=a;$('altv').textContent=a.toLocaleString('ja-JP');$('togo').textContent=a>=SUMMIT_ALT?'山頂':'頂まで あと '+(SUMMIT_ALT-a).toLocaleString('ja-JP')+' m';}
   const s=clamp(player.stamina,0,100);$('gripFill').style.transform=`scaleX(${s/100})`;$('gripFill').style.background=s<30?'var(--danger)':'var(--gold)';
-  $('stance').textContent=player.ledge?(player.ledge.ground?'岩棚で止まると回復':'岩棚：止まると回復'):
+  $('stance').textContent=player.ledge?(player.ledge.ground?'地面に立っている':'岩棚に立っている｜停止で握力回復'):
     player.support===2?'両足で踏ん張る：停止で微回復':player.support===1?'片足で踏ん張る：停止で微回復':'足場なし：握力消費が大きい';
   document.body.classList.toggle('low',s<30&&state.mode==='climb');
   const sec=Math.floor(state.time);if(sec!==lastSec){lastSec=sec;$('timev').textContent=fmt(state.time);}
@@ -874,13 +1086,22 @@ function updateHud(){
 
 /* ---------- loop ---------- */
 const clock=new THREE.Clock();
+let titleDrawn=false;
 function frame(){
   requestAnimationFrame(frame);
   const dt=Math.min(clock.getDelta(),0.08);state.t+=dt;
   const m=state.mode;
+  if(m==='title'){
+    if(!titleDrawn){
+      hero.position.set(player.x,player.y,wallZ(player.x,player.y)+0.47*HERO_S);
+      pose('stand',0,dt);
+      renderer.render(scene,camera);
+      titleDrawn=true;
+    }
+    return;
+  }
   if(m==='climb'||m==='falling'||m==='mantle'||m==='walk'||m==='pull')state.time+=dt;
-  if(m==='title'){hero.position.set(player.x,player.y,wallZ(player.x,player.y)+0.85);pose('stand',0,dt);}
-  else if(m==='climb')updateClimb(dt);
+  if(m==='climb')updateClimb(dt);
   else if(m==='falling')updateFall(dt);
   else updateSummit(dt);
   updateHazards(dt);
@@ -894,9 +1115,9 @@ function frame(){
     const x=player.x+s.x,y=player.y+s.y,z=wz+s.z;stPos.set([x,y,z,x-gust.dir*s.l,y,z],i*6);}stGeo.attributes.position.needsUpdate=true;}
   for(const h of holds){if(h.flash>0){h.flash-=dt;h.mesh.scale.setScalar(h.s*(h.flash>0.06?1.22:1));}}
   beamMat.uniforms.uT.value=state.t;
-  if(m!=='victory'){swordLight.intensity=2.2+Math.sin(state.t*2)*0.4;glow.scale.setScalar(2.6+Math.sin(state.t*2)*0.25);}
+  if(m!=='victory'){swordLight.intensity=2.2+Math.sin(state.t*2)*0.4;glow.scale.setScalar(3.2+Math.sin(state.t*2)*0.25);}
   if(windGain)windGain.gain.value=lerp(windGain.gain.value,0.04+smooth(0,Y_TOP,hy)*0.12+(gust.active?0.25:0),0.05);
-  updateCamera(dt);updateHud();
+  updateCamera(dt);updateHud();updateBubble(dt);
   renderer.render(scene,camera);
 }
 function onResize(){camera.aspect=innerWidth/innerHeight;camera.fov=camera.aspect<1?68:58;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);}
