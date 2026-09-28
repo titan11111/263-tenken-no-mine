@@ -454,12 +454,7 @@ function makeHero(){
   capeGeo.setAttribute('color',new THREE.BufferAttribute(capeColor,3));capeGeo.computeVertexNormals();
   const capeMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.92,side:THREE.DoubleSide});
   const cape=add(root,capeGeo,capeMat,0,0,0),cbase=cp.array.slice();
-  const hem=new THREE.Group();root.add(hem);
   const edgeMat=M(0xc89458,0.82);
-  for(const side of [-1,1]){
-    const seam=add(hem,new THREE.CylinderGeometry(0.008,0.008,1.26,5),edgeMat,side*0.36,-0.23,0.34);
-    seam.rotation.z=side*0.18;
-  }
   add(root,new THREE.SphereGeometry(0.045,10,8),edgeMat,0,0.41,0.34);
   function limb(x,y,ul,ll,ru,rl,mu,ml,end){const a=new THREE.Group();a.position.set(x,y,0);root.add(a);
     add(a,new THREE.CylinderGeometry(ru,ru*0.85,ul,8),mu,0,-ul/2,0);
@@ -469,7 +464,7 @@ function makeHero(){
   const hand={g:new THREE.SphereGeometry(0.062,8,6),m:leather,o:0.03};
   const boot={g:new THREE.BoxGeometry(0.13,0.11,0.26),m:leather,o:0.03,z:-0.05};
   root.userData={armL:limb(-0.3,0.34,0.36,0.34,0.065,0.056,cloth,leather,hand),armR:limb(0.3,0.34,0.36,0.34,0.065,0.056,cloth,leather,hand),
-    legL:limb(-0.12,-0.28,0.42,0.42,0.088,0.072,cloth,leather,boot),legR:limb(0.12,-0.28,0.42,0.42,0.088,0.072,cloth,leather,boot),head,cg:capeGeo,cbase,hem};
+    legL:limb(-0.12,-0.28,0.42,0.42,0.088,0.072,cloth,leather,boot),legR:limb(0.12,-0.28,0.42,0.42,0.088,0.072,cloth,leather,boot),head,cg:capeGeo,cbase};
   // Double the figure around its feet, so standing height and ledge contact stay intact.
   for(const child of root.children)child.position.y+=0.56;
   for(const key of ['armL','armR','legL','legR'])root.userData[key].target.y+=0.56;
@@ -728,7 +723,7 @@ const ringGeo=new THREE.RingGeometry(0.55,0.75,28);
 const rocks=[],debris=[];
 
 const player={x:0,y:FEET,stamina:100,grip:null,ledge:LEDGES[0],cp:LEDGES[0],lunge:0,ldx:0,ldy:1,phase:0,fallV:0,zOff:0.47*HERO_S,land:null,reach:null,aimed:null,aimHand:null,support:0,lowWarned:false};
-let rockTimer=4;
+let rockTimer=8;
 
 /* ---------- audio ---------- */
 let AC=null,windGain=null,noiseBuf=null;
@@ -992,7 +987,7 @@ function updateClimb(dt){
   if(player.stamina>45)player.lowWarned=false;
   if(player.grip&&player.grip.crumble){const h=player.grip;h.t+=dt;h.mesh.position.x=h.x+Math.sin(state.t*70)*0.035;if(h.t>1.4)crumbleHold(h);}
   if(sayT<=0){talkTimer-=dt;if(talkTimer<=0){voice('climb',3.0);talkTimer=R(11,18);}}
-  if(player.y>12){rockTimer-=dt;if(rockTimer<=0){spawnRock();rockTimer=R(2.8,5.5)*(player.y>80?0.7:1);}}
+  if(player.y>12){rockTimer-=dt;if(rockTimer<=0){spawnRock();rockTimer=R(5.6,11)*(player.y>80?0.7:1);}}
   if(player.y>40){gust.timer-=dt;if(!gust.active&&gust.timer<=0){gust.active=true;gust.t=2.2;gust.dir=rnd()<0.5?-1:1;toast(gust.dir>0?'突風 → 岩にしがみつけ':'← 突風 岩にしがみつけ',1.8);if(Math.random()<0.5)voice('gust',2.2);}}
   if(gust.active){gust.t-=dt;if(gust.t<=0){gust.active=false;gust.timer=R(6,11);}}
   if(player.stamina<=0){player.stamina=0;startFall('slip');return;}
@@ -1044,12 +1039,36 @@ function updateSummit(dt){
       $('rTime').textContent=fmt(state.time);$('rFall').textContent=state.falls+' 回';$('rBest').textContent=fmt(nb)+((!b||state.time<b)?'（更新）':'');
       $('end').classList.remove('hide');$('end').setAttribute('aria-hidden','false');$('hud').classList.remove('on');document.body.classList.remove('playing');}}
 }
+// 岩棚は落石の屋根になる。天面を横切った岩はそこで砕け、下へは落ちてこない。
+// ただし頭上 ROOF_SPAN 以内の岩棚だけ。遠い岩棚まで屋根にすると壁全体が安全地帯になる。
+const ROOF_SPAN=8;
+function ledgeRoof(x,py,ny){
+  for(const l of LEDGES){if(l.ground)continue;
+    if(l.y<=player.y||l.y-player.y>ROOF_SPAN)continue;
+    if(Math.abs(x-l.x)<l.w/2&&py>l.y&&ny<=l.y)return l;}
+  return null;
+}
+// 岩棚の真下にいる間は被弾しない（頭が天面より少し出ていても庇として扱う）。
+function sheltered(x,y){
+  for(const l of LEDGES){if(l.ground)continue;
+    if(l.y>y&&l.y-y<=ROOF_SPAN&&Math.abs(x-l.x)<l.w/2)return true;}
+  return false;
+}
+// 岩に弾かれた体を、いま乗っている岩棚の天面より下へ沈めない。
+function floorAt(x,y){
+  let f=FEET;
+  for(const l of LEDGES){if(l.ground)continue;
+    if(Math.abs(x-l.x)<l.w/2-0.3&&y>=l.y+FEET-0.05&&l.y+FEET>f)f=l.y+FEET;}
+  return f;
+}
 function updateHazards(dt){
-  for(let i=rocks.length-1;i>=0;i--){const r=rocks[i];r.vy=Math.max(r.vy-14*dt,-20);r.y+=r.vy*dt;
+  for(let i=rocks.length-1;i>=0;i--){const r=rocks[i];r.vy=Math.max(r.vy-14*dt,-20);const py=r.y;r.y+=r.vy*dt;
+    const roof=r.hit?null:ledgeRoof(r.x,py,r.y);
+    if(roof){sfx("hit");scene.remove(r.m,r.ring);rocks.splice(i,1);continue;}
     r.m.position.set(r.x,r.y,wallZ(r.x,r.y)+0.5+r.r+(r.hit?(player.y-r.y)*0.6:0));r.m.rotation.x+=dt*6;r.m.rotation.z+=dt*3;
     const ry=player.y+3.4;r.ring.position.set(r.x,ry,wallZ(r.x,ry)+0.6);
     r.ring.material.opacity=r.y>player.y+2?0.5+0.4*Math.sin(state.t*18):Math.max(0,r.ring.material.opacity-dt*3);
-    if(!r.hit&&state.mode==='climb'&&Math.abs(r.x-player.x)<1.3&&Math.abs(r.y-player.y)<1.5){r.hit=true;player.stamina-=22;player.y=Math.max(FEET,player.y-1.8);
+    if(!r.hit&&state.mode==='climb'&&Math.abs(r.x-player.x)<1.3&&Math.abs(r.y-player.y)<1.5&&!sheltered(player.x,player.y)){r.hit=true;player.stamina-=22;player.y=Math.max(floorAt(player.x,player.y),player.y-1.8);
       state.shake=0.55;sfx('hit');voice('rock',2.2);if(player.stamina<=0){player.stamina=0;startFall('bump');}}
     if(r.y<player.y-25||state.mode==='walk'||state.mode==='pull'){scene.remove(r.m,r.ring);rocks.splice(i,1);}}
   for(let i=debris.length-1;i>=0;i--){const d=debris[i];d.vy-=20*dt;d.m.position.y+=d.vy*dt;d.m.position.x+=d.vx*dt;d.m.position.z+=1.5*dt;d.m.rotation.x+=dt*5;
