@@ -27,7 +27,7 @@ html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--
 .shadow{text-shadow:0 1px 2px rgba(0,0,0,.55),0 2px 14px rgba(0,0,0,.35)}
 
 .hud{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;
-  padding:calc(env(safe-area-inset-top,0px) + 14px) calc(env(safe-area-inset-right,0px) + 18px) 0 calc(env(safe-area-inset-left,0px) + 18px);
+  padding:calc(env(safe-area-inset-top,0px) + 14px) calc(env(safe-area-inset-right,0px) + 92px) 0 calc(env(safe-area-inset-left,0px) + 18px);
   pointer-events:none;opacity:0;transition:opacity .8s}
 .hud.on{opacity:1}
 .alt{font-weight:800;font-size:clamp(32px,8vw,48px);line-height:1;letter-spacing:.01em}
@@ -95,6 +95,12 @@ body.playing #joyZone,body.playing #joy,body.playing #act{display:block}
 .cta{appearance:none;border:3px solid #d6a31a;border-radius:0;background:#0c0e12;color:#f4f1ea;font:inherit;font-weight:700;font-size:18px;
   min-height:56px;padding:14px 34px;cursor:pointer;letter-spacing:.16em;box-shadow:6px 6px 0 #6e1c24;transform:skewX(-8deg);transition:transform .08s ease}
 .cta:active{transform:skewX(-8deg) scale(.92)}
+#mute{position:fixed;z-index:8;top:calc(env(safe-area-inset-top,0px) + 12px);right:calc(env(safe-area-inset-right,0px) + 12px);
+  min-width:56px;min-height:44px;padding:8px 12px;letter-spacing:.18em;cursor:pointer;
+  font:700 13px "Zen Kaku Gothic New","Hiragino Sans",sans-serif;color:#f4f1ea;background:#0c0e12;
+  border:2px solid #d6a31a;box-shadow:4px 4px 0 #6e1c24;touch-action:manipulation;transition:transform .08s ease}
+#mute:active{transform:scale(.92)}
+#mute[aria-pressed="true"]{background:#14160c;color:#d6a31a}
 .best{font-size:13px;opacity:.8;margin-top:12px!important}
 .stats{display:grid;grid-template-columns:auto auto;gap:4px 18px;width:max-content;margin:0 0 22px;font-size:15px;font-variant-numeric:tabular-nums}
 .stats dt{opacity:.7}.stats dd{margin:0;font-weight:700;color:#d6a31a}
@@ -107,6 +113,7 @@ body.playing #joyZone,body.playing #joy,body.playing #act{display:block}
 </style>
 </head>
 <body>
+<button type="button" id="mute" aria-label="音声のオンオフ" aria-pressed="false">音あり</button>
 <section class="screen" id="title">
   <h1 class="vtitle">天剣の峰</h1>
   <div class="story shadow">
@@ -151,6 +158,10 @@ body.playing #joyZone,body.playing #joy,body.playing #act{display:block}
   </div>
 </section>
 <div id="flash"></div>
+<audio id="bgm" loop preload="none" playsinline>
+  <source src="audio/Where_the_Sky_Meets_Stone.m4a" type="audio/mp4">
+  <source src="audio/Where_the_Sky_Meets_Stone.mp3" type="audio/mpeg">
+</audio>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -182,6 +193,9 @@ const HIP_X=0.12*HERO_S, HIP_Y=0.28*HERO_S;   // 股関節の位置
 const LEG_SPAN=0.84*HERO_S;                   // 股関節〜足首
 const HEAD_Y=1.18*HERO_S;                     // 首の付け根
 const Y_TOP=130, GRIP_R=ARM_SPAN*1.06, SW_D=14;
+// 3,097m（岩棚 y=78）から上は、岩が減り崩れ岩が増え消耗も上がる設計だった。
+// 頂上前の詰めがきつすぎたので、この高さから上だけまとめて少し緩める。
+const EASE_Y=78;
 function wallZ(x,y){
   let z=(fbm(x*0.06+10,y*0.05)-0.5)*7;
   z+=(fbm(x*0.25,y*0.22+5,3)-0.5)*1.6;
@@ -405,13 +419,14 @@ function addHold(x,y,crumble,route=false,foothold=false){
 {let px=0,y=1.9;while(y<Y_TOP-0.6){
   px=clamp(px+R(-2.8,2.8),-10.5,10.5);const hx=px+R(-0.4,0.4);
   if(!nearLedge(hx,y))addHold(hx,y,false,true);
-  const ex=(y<30?3:y<80?2:1)+(rnd()<0.5?1:0);
-  for(let k=0;k<ex;k++){const x=R(-12,12),yy=y+R(-0.7,0.7);if(Math.abs(x-hx)<1.4||nearLedge(x,yy))continue;addHold(x,yy,y>18&&rnd()<(y>80?0.35:0.22));}
-  y+=y<50?R(1.6,2.2):R(1.9,2.6);
+  const ex=(y<30?3:2)+(rnd()<0.5?1:0);
+  for(let k=0;k<ex;k++){const x=R(-12,12),yy=y+R(-0.7,0.7);if(Math.abs(x-hx)<1.4||nearLedge(x,yy))continue;addHold(x,yy,y>18&&rnd()<(y>EASE_Y?0.26:0.22));}
+  y+=y<50?R(1.6,2.2):(y<EASE_Y?R(1.9,2.6):R(1.7,2.2));
 }}
-// The last shelf has a deliberate, unbreakable route to the summit lip.
-for(const [x,y] of [[-1.5,108],[-0.8,112],[0.1,116],[-0.5,120],[0,124]])
-  if(!holds.some(h=>Math.hypot(h.x-x,h.y-y)<0.7))addHold(x,y,false,true);
+// The last shelf needs a stable route all the way to the mantle trigger.
+// A nearby crumbling hold must not suppress a required safe hold.
+for(const [x,y] of [[-1.5,108],[-0.8,112],[0.1,116],[0.8,120],[0,124],[0.8,127],[0.8,129]])
+  if(!holds.some(h=>h.route&&!h.crumble&&Math.hypot(h.x-x,h.y-y)<0.7))addHold(x,y,false,true);
 // Extra low holds give the opening ascent several places to plant a foot.
 {
   const early=holds.filter(h=>h.route&&h.y>6.5&&h.y<30);
@@ -460,7 +475,7 @@ function makeHero(){
     add(a,new THREE.CylinderGeometry(ru,ru*0.85,ul,8),mu,0,-ul/2,0);
     const b=new THREE.Group();b.position.y=-ul;a.add(b);
     add(b,new THREE.CylinderGeometry(rl,rl*0.8,ll,8),ml,0,-ll/2,0);
-    add(b,end.g,end.m,0,-ll-end.o,end.z||0);return {a,b,ul,ll,target:new THREE.Vector3(x,y-ul-ll,0)};}
+    add(b,end.g,end.m,0,-ll-end.o,end.z||0);return {a,b,ul,ll,target:new THREE.Vector3(x,y-ul-ll,0),bendPrev:new THREE.Vector3(0,0,1)};}
   const hand={g:new THREE.SphereGeometry(0.062,8,6),m:leather,o:0.03};
   const boot={g:new THREE.BoxGeometry(0.13,0.11,0.26),m:leather,o:0.03,z:-0.05};
   root.userData={armL:limb(-0.3,0.34,0.36,0.34,0.065,0.056,cloth,leather,hand),armR:limb(0.3,0.34,0.36,0.34,0.065,0.056,cloth,leather,hand),
@@ -471,13 +486,28 @@ function makeHero(){
   root.scale.setScalar(HERO_S);return root;
 }
 const hero=makeHero();scene.add(hero);
-const down=new THREE.Vector3(0,-1,0),ikLocal=new THREE.Vector3();
+const down=new THREE.Vector3(0,-1,0),ikLocal=new THREE.Vector3(),ikBend=new THREE.Vector3();
 function solveLimb(limb,target,bend,dt,rate=15){
   // rate=0 は「補間なし」。掴んだ岩は1フレームも滑らせない。
   if(rate<=0)limb.target.copy(target);else limb.target.lerp(target,1-Math.exp(-rate*dt));
   const origin=limb.a.position,delta=ikLocal.copy(limb.target).sub(origin);
-  const len=clamp(delta.length(),0.05,limb.ul+limb.ll-0.006),dir=delta.normalize();
-  const bendDir=new THREE.Vector3().copy(bend).addScaledVector(dir,-bend.dot(dir)).normalize();
+  // 折り畳みの下限。len が sqrt(ul²-ll²) を切ると肘が手より先へ出て、前腕が上腕に裏返って重なる。
+  // 上下で長さの違う腕だけが該当し（0.118）、左右同寸の脚は原理上起きない。余裕を1割足す。
+  const minLen=Math.sqrt(Math.max(0,limb.ul*limb.ul-limb.ll*limb.ll))+(limb.ul+limb.ll)*0.10;
+  const len=clamp(delta.length(),minLen,limb.ul+limb.ll-0.006),dir=delta.normalize();
+  // 肘の向き。bend が腕の向きと完全に平行だと射影が消えて向きが決まらないので、
+  // そのときだけ前フレームの向きを引き継ぐ（閾値を広げると今度は境界で肘が飛ぶ）。
+  ikBend.copy(bend).addScaledVector(dir,-bend.dot(dir));
+  if(ikBend.lengthSq()<1e-8){
+    const pv=limb.bendPrev;
+    ikBend.copy(pv).addScaledVector(dir,-pv.dot(dir));
+    if(ikBend.lengthSq()<1e-8){
+      ikBend.set(-dir.y,dir.x,0);
+      if(ikBend.lengthSq()<1e-8)ikBend.set(0,-dir.z,dir.y);
+    }
+  }
+  const bendDir=ikBend.normalize();
+  limb.bendPrev.copy(bendDir);
   const along=(limb.ul*limb.ul-limb.ll*limb.ll+len*len)/(2*len);
   const across=Math.sqrt(Math.max(0,limb.ul*limb.ul-along*along));
   const elbow=new THREE.Vector3().copy(dir).multiplyScalar(along).addScaledVector(bendDir,across);
@@ -726,23 +756,78 @@ const player={x:0,y:FEET,stamina:100,grip:null,ledge:LEDGES[0],cp:LEDGES[0],lung
 let rockTimer=8;
 
 /* ---------- audio ---------- */
-let AC=null,windGain=null,noiseBuf=null;
+let AC=null,windGain=null,noiseBuf=null,master=null,seGain=null,bgmEl=null,bgmSrc=null,bgmGain=null,bgmOffT=0,muted=false;
+try{ muted=localStorage.getItem('tg.263.mute')==='1'; }catch(e){}
+const BGM_VOL=0.4;
+function syncMute(){
+  const b=$('mute'); if(!b) return;
+  b.textContent=muted?'無音':'音あり';
+  b.setAttribute('aria-pressed', muted?'true':'false');
+}
+function bgmWanted(){ return !muted; }
+function bgmInit(){
+  if(!bgmEl){ bgmEl=$('bgm'); if(!bgmEl) return false; bgmEl.loop=true; }
+  if(AC && !bgmGain){
+    try{
+      bgmSrc=AC.createMediaElementSource(bgmEl);
+      bgmGain=AC.createGain(); bgmGain.gain.value=0.0001;
+      bgmSrc.connect(bgmGain); bgmGain.connect(master);
+    }catch(e){ bgmSrc=null; bgmGain=null; }
+  }
+  return !!bgmEl;
+}
+function bgmFade(to, sec){
+  if(bgmGain && AC){
+    const t=AC.currentTime, g=bgmGain.gain, v=g.value>0?g.value:0.0001;
+    g.cancelScheduledValues(t); g.setValueAtTime(v, t);
+    g.linearRampToValueAtTime(Math.max(0.0001,to), t+Math.max(0.04,sec));
+    return;
+  }
+  if(bgmEl) try{ bgmEl.volume=Math.min(1,to); }catch(e){}
+}
+function bgmStart(){
+  if(!bgmWanted() || !bgmInit()) return;
+  clearTimeout(bgmOffT);
+  const p=bgmEl.play();
+  if(p && p.catch) p.catch(()=>{});
+  bgmFade(BGM_VOL, 1.0);
+}
+function bgmStop(){
+  if(!bgmEl) return;
+  bgmFade(0, 0.28);
+  clearTimeout(bgmOffT);
+  bgmOffT=setTimeout(()=>{ if(bgmEl && !bgmWanted()) try{ bgmEl.pause(); }catch(e){} }, 320);
+}
 function initAudio(){try{
-  AC=new (window.AudioContext||window.webkitAudioContext)();
-  const len=AC.sampleRate*2,buf=AC.createBuffer(1,len,AC.sampleRate),d=buf.getChannelData(0);let last=0;
-  for(let i=0;i<len;i++){last=(last+0.02*(Math.random()*2-1))/1.02;d[i]=last*3.5;}
-  noiseBuf=AC.createBuffer(1,AC.sampleRate,AC.sampleRate);const nd=noiseBuf.getChannelData(0);for(let i=0;i<nd.length;i++)nd[i]=Math.random()*2-1;
-  const src=AC.createBufferSource();src.buffer=buf;src.loop=true;const f=AC.createBiquadFilter();f.type='bandpass';f.frequency.value=420;f.Q.value=0.6;
-  windGain=AC.createGain();windGain.gain.value=0;src.connect(f).connect(windGain).connect(AC.destination);src.start();
+  if(!AC){
+    AC=new (window.AudioContext||window.webkitAudioContext)();
+    master=AC.createGain(); master.gain.value=muted?0.0001:1; master.connect(AC.destination);
+    seGain=AC.createGain(); seGain.gain.value=0.85; seGain.connect(master);
+    const len=AC.sampleRate*2,buf=AC.createBuffer(1,len,AC.sampleRate),d=buf.getChannelData(0);let last=0;
+    for(let i=0;i<len;i++){last=(last+0.02*(Math.random()*2-1))/1.02;d[i]=last*3.5;}
+    noiseBuf=AC.createBuffer(1,AC.sampleRate,AC.sampleRate);const nd=noiseBuf.getChannelData(0);for(let i=0;i<nd.length;i++)nd[i]=Math.random()*2-1;
+    const src=AC.createBufferSource();src.buffer=buf;src.loop=true;const f=AC.createBiquadFilter();f.type='bandpass';f.frequency.value=420;f.Q.value=0.6;
+    windGain=AC.createGain();windGain.gain.value=0;src.connect(f).connect(windGain).connect(seGain);src.start();
+  }
+  if(AC.state==='suspended') AC.resume();
+  if(master) master.gain.setValueAtTime(muted?0.0001:1, AC.currentTime);
+  bgmStart();
 }catch(e){AC=null;}}
-function sfx(type){if(!AC)return;const t=AC.currentTime;try{
+function sfx(type){if(!AC||muted)return;const t=AC.currentTime;const dest=seGain||AC.destination;try{
   if(type==='hit'||type==='crumble'){const s=AC.createBufferSource();s.buffer=noiseBuf;const f=AC.createBiquadFilter();f.type='lowpass';f.frequency.value=type==='hit'?320:900;
-    const g=AC.createGain();g.gain.setValueAtTime(type==='hit'?0.9:0.4,t);g.gain.exponentialRampToValueAtTime(0.001,t+(type==='hit'?0.45:0.3));s.connect(f).connect(g).connect(AC.destination);s.start(t);s.stop(t+0.5);}
+    const g=AC.createGain();g.gain.setValueAtTime(type==='hit'?0.9:0.4,t);g.gain.exponentialRampToValueAtTime(0.001,t+(type==='hit'?0.45:0.3));s.connect(f).connect(g).connect(dest);s.start(t);s.stop(t+0.5);}
   else if(type==='tick'||type==='jump'){const o=AC.createOscillator(),g=AC.createGain();o.type=type==='tick'?'triangle':'sine';o.frequency.setValueAtTime(type==='tick'?1300:260,t);
-    if(type==='jump')o.frequency.exponentialRampToValueAtTime(420,t+0.12);g.gain.setValueAtTime(0.12,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.12);o.connect(g).connect(AC.destination);o.start(t);o.stop(t+0.15);}
+    if(type==='jump')o.frequency.exponentialRampToValueAtTime(420,t+0.12);g.gain.setValueAtTime(0.12,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.12);o.connect(g).connect(dest);o.start(t);o.stop(t+0.15);}
   else if(type==='victory'){[523.25,659.25,783.99,1046.5,1318.5].forEach((fq,i)=>{const o=AC.createOscillator(),g=AC.createGain();o.type='sine';o.frequency.value=fq;
-    g.gain.setValueAtTime(0,t+i*0.09);g.gain.linearRampToValueAtTime(0.11,t+i*0.09+0.05);g.gain.exponentialRampToValueAtTime(0.001,t+i*0.09+3.5);o.connect(g).connect(AC.destination);o.start(t+i*0.09);o.stop(t+4);});}
+    g.gain.setValueAtTime(0,t+i*0.09);g.gain.linearRampToValueAtTime(0.11,t+i*0.09+0.05);g.gain.exponentialRampToValueAtTime(0.001,t+i*0.09+3.5);o.connect(g).connect(dest);o.start(t+i*0.09);o.stop(t+4);});}
 }catch(e){}}
+function toggleMute(){
+  muted=!muted;
+  try{ localStorage.setItem('tg.263.mute', muted?'1':'0'); }catch(e){}
+  syncMute();
+  if(muted){ bgmStop(); if(windGain) windGain.gain.value=0; }
+  else initAudio();
+}
 
 /* ---------- UI helpers ---------- */
 function toast(s,dur=2.2){const el=$('toast');el.textContent=s;el.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(()=>el.classList.remove('on'),dur*1000);}
@@ -896,6 +981,8 @@ function tapBtn(el, fn){
 tapBtn($('start'), () => { initAudio(); $('title').classList.add('hide'); $('hud').classList.add('on'); document.body.classList.add('playing');
   state.mode = 'climb'; toast('岩をタップして手を伸ばす', 2.4); say('百年抜けない剣を、なんで俺が', 3.2); });
 tapBtn($('again'), () => location.reload());
+tapBtn($('mute'), toggleMute);
+syncMute();
 
 /* ---------- gameplay ---------- */
 function ledgeAt(x,y,lo,hi){for(const l of LEDGES){if(Math.abs(x-l.x)<l.w/2-0.3&&y>=l.y+lo&&y<=l.y+hi)return l;}return null;}
@@ -960,7 +1047,7 @@ function updateClimb(dt){
   if(!reaching){
     if(player.lunge>0){player.lunge-=dt;vx=player.ldx*8.5;vy=player.ldy*8.5;}
     else{const onLedge=!!standingLedge();const sp=(onLedge||gripping)?2.3:1.1;vx=j.x*sp;vy=j.y*sp;if(!onLedge&&!gripping)vy-=1.7;if(lip&&j.y>0.2)vy+=0.8;}
-    if(gust.active)vx+=gust.dir*((gripping||standingLedge())?0.6:2.4);
+    if(gust.active)vx+=gust.dir*((gripping||standingLedge())?0.6:(player.y>EASE_Y?1.9:2.4));
     const py=player.y;player.x=clamp(player.x+vx*dt,-12.5,12.5);let ny=py+vy*dt;
     for(const l of LEDGES){if(Math.abs(player.x-l.x)<l.w/2-0.3&&py>=l.y+FEET-0.05&&ny<l.y+FEET)ny=l.y+FEET;}
     player.y=Math.max(ny,FEET);
@@ -973,23 +1060,23 @@ function updateClimb(dt){
   if(L&&!reaching){
     // Feet remain on the top face; the HUD and recovery use this same contact state.
     player.stamina=Math.min(100,player.stamina+(moving?0:38)*dt);
-    if(player.cp!==L&&!L.ground){player.cp=L;toast('岩棚に到着。止まると握力が戻る',2.2);voice('ledge',2.6);}
+    if(player.cp!==L&&!L.ground){player.cp=L;toast(L===LEDGES[LEDGES.length-1]?'最後の岩棚。握力を戻し、白い岩をたどって山頂へ':'岩棚に到着。止まると握力が戻る',3.2);voice('ledge',2.6);}
   }else if(player.support>0&&!moving&&!reaching&&gripping&&!gust.active){
     // 両足で立てていれば、壁の途中でもしっかり戻る（足で休む＝登りの基本）
     player.stamina=Math.min(100,player.stamina+(player.support===2?8.5:4.5)*dt);
   }else{
     const supportRelief=player.support===2?0.45:player.support===1?0.70:1;
     let dr=(gripping||reaching)?(moving?4.0:1.7):11;
-    dr*=supportRelief;if(player.y>90)dr*=1.3;if(gust.active)dr+=2.5;
+    dr*=supportRelief;if(player.y>90)dr*=1.12;if(gust.active)dr+=2.5;
     player.stamina-=dr*dt;
   }
   if(player.stamina<25&&!player.lowWarned){player.lowWarned=true;toast('握力が残り少ない。足場を使い岩棚へ',2);voice('low',2.4);}
   if(player.stamina>45)player.lowWarned=false;
   if(player.grip&&player.grip.crumble){const h=player.grip;h.t+=dt;h.mesh.position.x=h.x+Math.sin(state.t*70)*0.035;if(h.t>1.4)crumbleHold(h);}
   if(sayT<=0){talkTimer-=dt;if(talkTimer<=0){voice('climb',3.0);talkTimer=R(11,18);}}
-  if(player.y>12){rockTimer-=dt;if(rockTimer<=0){spawnRock();rockTimer=R(5.6,11)*(player.y>80?0.7:1);}}
+  if(player.y>12){rockTimer-=dt;if(rockTimer<=0){spawnRock();rockTimer=R(5.6,11)*(player.y>EASE_Y?0.9:1);}}
   if(player.y>40){gust.timer-=dt;if(!gust.active&&gust.timer<=0){gust.active=true;gust.t=2.2;gust.dir=rnd()<0.5?-1:1;toast(gust.dir>0?'突風 → 岩にしがみつけ':'← 突風 岩にしがみつけ',1.8);if(Math.random()<0.5)voice('gust',2.2);}}
-  if(gust.active){gust.t-=dt;if(gust.t<=0){gust.active=false;gust.timer=R(6,11);}}
+  if(gust.active){gust.t-=dt;if(gust.t<=0){gust.active=false;gust.timer=R(6,11)+(player.y>EASE_Y?3:0);}}
   if(player.stamina<=0){player.stamina=0;startFall('slip');return;}
   if(player.y+HEAD_Y+0.48*HERO_S>=Y_TOP-1.2){state.mode='mantle';state.mt=0;player.reach=null;player.lunge=0;gust.active=false;const rz=wallZ(player.x,Y_TOP);
     state.from=new THREE.Vector3(player.x,player.y,hero.position.z);const tx=player.x*0.6;
@@ -1135,12 +1222,17 @@ function frame(){
   for(const h of holds){if(h.flash>0){h.flash-=dt;h.mesh.scale.setScalar(h.s*(h.flash>0.06?1.22:1));}}
   beamMat.uniforms.uT.value=state.t;
   if(m!=='victory'){swordLight.intensity=2.2+Math.sin(state.t*2)*0.4;glow.scale.setScalar(3.2+Math.sin(state.t*2)*0.25);}
-  if(windGain)windGain.gain.value=lerp(windGain.gain.value,0.04+smooth(0,Y_TOP,hy)*0.12+(gust.active?0.25:0),0.05);
+  if(windGain)windGain.gain.value=muted?0:lerp(windGain.gain.value,(0.018+smooth(0,Y_TOP,hy)*0.05+(gust.active?0.1:0)),0.05);
   updateCamera(dt);updateHud();updateBubble(dt);
   renderer.render(scene,camera);
 }
 function onResize(){camera.aspect=innerWidth/innerHeight;camera.fov=camera.aspect<1?68:58;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);}
 addEventListener('resize',onResize);onResize();
+addEventListener('visibilitychange', ()=>{
+  if(!AC) return;
+  if(document.hidden){ if(AC.state==='running') AC.suspend(); bgmStop(); }
+  else if(!muted){ if(AC.state==='suspended') AC.resume(); bgmStart(); }
+});
 frame();
 })();
 </script>
